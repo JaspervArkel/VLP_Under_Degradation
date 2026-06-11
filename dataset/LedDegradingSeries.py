@@ -7,6 +7,7 @@ import os
 import json
 import pandas as pd
 
+
 def calculate_decay_constant(r90_hrs: float):
     """
     Calculate decay constant for use in TM-21 model.
@@ -30,26 +31,52 @@ def calculate_decay_constant(r90_hrs: float):
         k = \frac{\ln(0.9)}{r90\_hours}
     $$
     """
-    decay_k = np.log(1/0.9) / r90_hrs
+    decay_k = np.log(1 / 0.9) / r90_hrs
     return decay_k
+
 
 def calculate_relative_decay(decay_k: float, start_hours: float, end_hours: float):
     """
     Calculate the relative decay between two time points.
     This is used to calculate the relative brightness at a given time.
-    
+
     Parameters:
     - decay_k: Decay constant.
     - start_hours: Start time in hours.
     - end_hours: End time in hours.
     """
     # np.exp(-decay_k * end_hours) / np.exp(-decay_k * start_hours) but optimised
-    return np.exp(decay_k*(start_hours-end_hours))
+    return np.exp(decay_k * (start_hours - end_hours))
+
+
+def dirtdecayer(simulate_dirt_cleaning, angle, length):
+    decay730 = 0 #decay after 730 days
+    if(angle == 90):
+        decay730 = 1.5 #between 1-2.5
+    hourlydecay = decay730/730*24
+
+    decay_array = 1- np.arange(1, length + 1) *hourlydecay
+    cleaned_on_hour = np.zeros(len(decay_array))
+    if(simulate_dirt_cleaning):
+
+        cleanhour = len(cleaned_on_hour)/2
+        cleaned_on_hour[cleanhour]=1
+        dustathourx = decay_array[cleanhour]
+        decay_array[cleanhour::] -= dustathourx
+
+    return cleaned_on_hour, decay_array
+
+
+
+
+    pass
+
 
 def main():
     parser = argparse.ArgumentParser("dataset_led_age_series")
     parser.add_argument(
-        "--src", help="Heatmap rank-3 tensor to simulate aging on", type=str, default="dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy"
+        "--src", help="Heatmap rank-3 tensor to simulate aging on", type=str,
+        default="dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy"
     )
     parser.add_argument(
         "--dst", help="Folder to export to", type=str, default="dataset/heatmaps/heatmap_176_aged"
@@ -75,16 +102,25 @@ def main():
     parser.add_argument(
         "--seed", help="Random seed", type=int, default=42
     )
+    parser.add_argument(
+        "--simulate-dirt", help="Simulate dirt", type=bool, default=False
+    )
+    parser.add_argument(
+        "--simulate-dirt-cleaning", help="Simulate dirt", type=bool, default=False
+    )
+    parser.add_argument(
+        "--photodiode-angle", help="Photodiode angle", type=float, default=90.0
+    )
     args = parser.parse_args()
-    
+
     rng = np.random.default_rng(args.seed)
-    
+
     data = np.load(args.src)
     H, W, leds_n = data.shape
 
-    flat_data = data.reshape(W*H, leds_n)
+    flat_data = data.reshape(W * H, leds_n)
 
-    valid_mask = np.ones_like(data[:, :, 0], dtype=float) # Shape (H, W), 1 for valid, 0 for invalid same for all LEDs
+    valid_mask = np.ones_like(data[:, :, 0], dtype=float)  # Shape (H, W), 1 for valid, 0 for invalid same for all LEDs
     valid_mask[data[:, :, 0] == -1] = 0
 
     # Generate time steps
@@ -95,11 +131,29 @@ def main():
     # Calculate relative decay for each LED at each time step
     relative_decay = np.exp(-np.outer(timesteps, decay_ks))
 
+    #To Do
+    #Dirt
+    cleaned = []
+    if(args.simulate_dirt):
+        cleaned , dirtdecay = dirtdecayer(args.simulate_dirt_cleaning, args.photodiode_angle,len(timesteps))
+        relative_decay = relative_decay * dirtdecay[:, None]
+
+
+    #thermal droop
+    #random blockages
+    #failures
+
+
+
+
+
+
+
     # Add noise to the data
     relative_decay += rng.normal(0, args.std, size=relative_decay.shape)
 
     # Generate LED ids
-    led_ids = np.arange(leds_n)[None, None, :] # Shape (1, 1, leds_n)
+    led_ids = np.arange(leds_n)[None, None, :]  # Shape (1, 1, leds_n)
     # Generate random sample indices at each time step
     valid_flat_idxs = np.flatnonzero(valid_mask)
 
@@ -111,37 +165,40 @@ def main():
     sample_locs = np.stack((xs, ys), axis=-1)
 
     # Fetch the samples for each LED at each time step
-    sample_flat_idxs = sample_flat_idxs[:, :, None] # Add a new axis to the sample_flat_idxs to match the shape of led_ids
+    sample_flat_idxs = sample_flat_idxs[
+        :, :, None]  # Add a new axis to the sample_flat_idxs to match the shape of led_ids
     sample_flat_idxs = np.broadcast_to(sample_flat_idxs, (timesteps.shape[0], args.samples_per_timestep, leds_n))
     led_ids = np.broadcast_to(led_ids, (timesteps.shape[0], args.samples_per_timestep, leds_n))
 
     # Age the samples
-    samples = flat_data[sample_flat_idxs, led_ids] # Get the samples for each LED at each timestep with the same sample index. Shape (timesteps, samples_per_timestep, leds_n)
-    aged_samples = samples * relative_decay[:, None, :] # Apply the relative decay to the samples
-    print(samples.shape)
-    flickering = rng.choice([0, 1], size=aged_samples.shape, p=[args.flickering_prob, 1 - args.flickering_prob])
-    aged_samples = aged_samples * flickering # Apply flickering to the samples
-    
-    print(f"Simulated {(1-flickering).sum()} LEDs flickering")
+    samples = flat_data[
+        sample_flat_idxs, led_ids]  # Get the samples for each LED at each timestep with the same sample index. Shape (timesteps, samples_per_timestep, leds_n)
+    aged_samples = samples * relative_decay[:, None, :]  # Apply the relative decay to the samples
 
-     # Reshape to (timesteps * samples_per_timestep, leds_n), C-style row-major order so that the first axis is the slowest changing axis
-    reshaped = aged_samples.reshape(-1, samples.shape[2]) # Shape (timesteps * samples_per_timestep, leds_n)
-    sample_locs = sample_locs.reshape(-1, 2) # Shape (timesteps * samples_per_timestep, 2)
+    flickering = rng.choice([0, 1], size=aged_samples.shape, p=[args.flickering_prob, 1 - args.flickering_prob])
+    aged_samples = aged_samples * flickering  # Apply flickering to the samples
+
+    print(f"Simulated {(1 - flickering).sum()} LEDs flickering")
+
+    # Reshape to (timesteps * samples_per_timestep, leds_n), C-style row-major order so that the first axis is the slowest changing axis
+    reshaped = aged_samples.reshape(-1, samples.shape[2])  # Shape (timesteps * samples_per_timestep, leds_n)
+    sample_locs = sample_locs.reshape(-1, 2)  # Shape (timesteps * samples_per_timestep, 2)
 
     os.makedirs(args.dst, exist_ok=True)
 
+
     df = pd.DataFrame(
-        data=np.hstack((sample_locs*10, reshaped)),
+        data=np.hstack((sample_locs * 10, reshaped)),
         columns=['x', 'y'] + [f'led_{i}' for i in range(reshaped.shape[1])],
     ).astype({
         'x': 'int32',
         'y': 'int32',
     })
-    
+
     print("Aging data...")
     # Save the dataframe to a CSV file
-    df.to_csv(args.dst + "/aged_samples.csv", index=False)
-    
+    df.to_csv(args.dst + "/degraded_samples.csv", index=False)
+
     # Save the data to a json
     led_decays = {f"LED {i}": decay_k for i, decay_k in enumerate(decay_ks)}
     json.dump(led_decays, open(args.dst + "/decay_ks.json", "w"))
@@ -149,14 +206,15 @@ def main():
     if not args.imgs:
         return
 
-    aged_data = data.copy() * relative_decay[-1, :] # Apply the relative decay to the data
-    aged_data = np.clip(aged_data, 0, None) # Clip negative values to 0
-    for i in tqdm(range(leds_n), "Exporting heat maps for degradation data"):
+    aged_data = data.copy() * relative_decay[-1, :]  # Apply the relative decay to the data
+    aged_data = np.clip(aged_data, 0, None)  # Clip negative values to 0
+    for i in tqdm(range(leds_n), "Exporting heat maps for degradation data data"):
         plt.imshow(aged_data[:, :, i], interpolation='nearest', origin='lower', vmin=0, vmax=data[:, :, i].max())
         plt.colorbar()
         plt.title(f"Aged Data for LED {i} ({args.time} Hours)\n(decay_k = {decay_ks[i]})")
-        plt.savefig(args.dst + f"/led_{i}_aged_{args.time}_hours.png")
+        plt.savefig(args.dst + f"/led_{i}_degraded_{args.time}_hours.png")
         plt.clf()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()

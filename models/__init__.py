@@ -1,4 +1,5 @@
 from utils.task_registry import TaskRegistry
+from .mlp_anti_degradation import MLPAntiDegradation
 
 from .rf import RF
 from .mlp import MLP
@@ -8,6 +9,7 @@ from .residual_mlp_online import ResidualMLPOnline
 from .residual_mlp_online_sparse import ResidualMLPOnlineSparse
 
 from .knn import KNN
+from .rf_anti_degradation import RFAntiDegradation
 from .wknn import WKNN
 from .woknn import WOKNN
 from .woknn_online import WOKNNOnline
@@ -38,4 +40,8 @@ def register_models() -> TaskRegistry:
     task_registry.register("RESIDUAL-MLP-ONLINE-SPARSE", ResidualMLPOnlineSparse, data_npy_path="./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy", epochs=50)
     task_registry.register("PICO-INTERFACE", PicoInterface, serial_port='COM5')
 
+    task_registry.register("MLP-ANTI-DEGRADING", MLPAntiDegradation)
+    task_registry.register("RF-ANTI-DEGRADING", RFAntiDegradation)
+    task_registry.register("MLP-ANTI-DEGRADING-PICO", MLPAntiDegradation, epochs=25)
+    task_registry.register("RF-ANTI-DEGRADING-PICO", RFAntiDegradation)
     return task_registry

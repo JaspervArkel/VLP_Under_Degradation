@@ -106,6 +106,6 @@ class MLP(BaseModel):
         :return: The loaded model.
         """
         with open(model_path, "rb") as f:
-            self.model.load_state_dict(torch.load(f))
+            self.model.load_state_dict(torch.load(f, weights_only=False))
             return
         raise ValueError(f"Model at {model_path} not loaded")

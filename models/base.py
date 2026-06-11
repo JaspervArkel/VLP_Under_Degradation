@@ -12,7 +12,7 @@ class BaseModel:
         """
         raise NotImplementedError("Fit method not implemented.")
 
-    def predict(self, X: torch.Tensor, eval: bool=False) -> torch.Tensor:
+    def predict(self, X: torch.Tensor, eval: bool=False, **kwargs, ) -> torch.Tensor:
         """
         Predict using the model on data.
 
