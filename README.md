@@ -332,6 +332,250 @@ The generated graph shows:
 
 The `results.json` file contains the experiment configuration, timesteps, positioning errors and simulated decay values.
 
+# Embedded part
+# Raspberry Pi Pico Deployment
+
+This project deploys the VLP positioning model to a Raspberry Pi Pico using TensorFlow Lite Micro.
+
+## Requirements
+
+Install:
+
+* Python 3
+* CMake
+* Ninja
+* Raspberry Pi Pico SDK
+* ARM GNU toolchain
+* `pico-tflmicro`
+* Raspberry Pi Pico or Pico VS Code extension
+
+Clone `pico-tflmicro`:
+
+```bash
+git clone https://github.com/raspberrypi/pico-tflmicro.git
+```
+
+## 1. Clone the Project
+
+```bash
+git clone https://github.com/JaspervArkel/VLP_Under_Degradation.git
+cd VLP_Under_Degradation
+```
+
+## 2. Install Python Dependencies
+
+```bash
+python -m venv .venv
+```
+
+Windows:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux or macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+pip install -r requirements.txt
+pip install tensorflow pyserial
+```
+
+## 3. Export the Dataset
+
+The following files must exist:
+
+```text
+dataset/exported/data_176/train.csv
+dataset/exported/data_176/test.csv
+```
+
+Export them to NumPy arrays:
+
+```bash
+python utils/export_trainin_data.py --dataset "./dataset/exported/data_176"
+```
+
+This creates:
+
+```text
+X_train.npy
+y_train.npy
+X_test.npy
+y_test.npy
+```
+
+## 4. Train and Quantize the Model
+
+Run:
+
+```bash
+python tflite_Deployment.py
+```
+
+This creates:
+
+```text
+x_mean.npy
+x_std.npy
+tiny_pico_model.keras
+tiny_pico_model_int8.tflite
+```
+
+Test the TFLite model:
+
+```bash
+python test_tflite.py
+```
+
+## 5. Generate the Pico Files
+
+Generate the model C array:
+
+```bash
+python utils/convert_tflite_to_cc.py
+```
+
+Generate the normalization header:
+
+```bash
+python utils/export_arrays.py
+```
+
+Generate the kNN reference data:
+
+```bash
+python utils/export_knn_references.py
+```
+
+Copy the generated files into `raspberry-project`:
+
+```text
+model_data.cc
+normalization_data.h
+knn_reference_data.h
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item model_data.cc raspberry-project\model_data.cc -Force
+Copy-Item normalization_data.h raspberry-project\normalization_data.h -Force
+Copy-Item knn_reference_data.h raspberry-project\knn_reference_data.h -Force
+```
+
+Linux or macOS:
+
+```bash
+cp model_data.cc raspberry-project/model_data.cc
+cp normalization_data.h raspberry-project/normalization_data.h
+cp knn_reference_data.h raspberry-project/knn_reference_data.h
+```
+
+## 6. Configure `pico-tflmicro`
+
+Open:
+
+```text
+raspberry-project/CMakeLists.txt
+```
+
+Replace the existing absolute `pico-tflmicro` path with the path to your local clone.
+
+For example:
+
+```cmake
+set(
+    PICO_TFLMICRO_PATH
+    "C:/path/to/pico-tflmicro"
+)
+
+add_subdirectory(
+    "${PICO_TFLMICRO_PATH}"
+    "pico-tflmicro-build"
+    EXCLUDE_FROM_ALL
+)
+
+target_include_directories(
+    pico_mlp_inference
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    "${PICO_TFLMICRO_PATH}/src"
+)
+```
+
+The original Raspberry Pi Pico should use:
+
+```cmake
+set(PICO_BOARD pico CACHE STRING "Board type")
+```
+
+## 7. Build the Firmware
+
+From the repository root:
+
+```bash
+cmake -S raspberry-project -B raspberry-project/build -G Ninja
+cmake --build raspberry-project/build --target pico_mlp_inference
+```
+
+The firmware is created at:
+
+```text
+raspberry-project/build/pico_mlp_inference.uf2
+```
+
+## 8. Flash the Pico
+
+1. Disconnect the Pico.
+2. Hold the `BOOTSEL` button.
+3. Connect the Pico over USB.
+4. Release `BOOTSEL`.
+5. Open the `RPI-RP2` drive.
+6. Copy `pico_mlp_inference.uf2` to the drive.
+
+The Pico will restart automatically.
+
+## 9. Configure the Serial Port
+
+Find the Pico serial port.
+
+On Windows:
+
+```powershell
+[System.IO.Ports.SerialPort]::getportnames()
+```
+
+Open `picotester.py` and change:
+
+```python
+PORT = "COM11"
+```
+
+to the port used by your Pico.
+
+## 10. Run the Experiment
+
+Run:
+
+```bash
+python picotester.py
+```
+
+The host sends degraded measurements to the Pico. The Pico runs the quantized model and returns the predicted position.
+
+Results are saved in:
+
+```text
+pico_degradation_results/
+```
+
 
 ## Original implementation
 
