@@ -1,250 +1,612 @@
-# VLP
+# VLP Under Degradation
 
-# Prerequisites
 
-This project was built with the following software installed:
-- Python 3.13
+This repository contains the code and experiments for **<brief description of your study>**.
 
-# Get Started
+The implementation used in this study is based on the original [VLP study by Joey Wenyi Li](https://github.com/joeywli/VLP.git).
 
-In order to get started we need to install the requirements
+The original repository contains the complete implementation and documentation for:
 
-## Create virtual environment (Optional)
-```bash
-$ python -m venv .venv
-source .venv/bin/activate # .\.venv\Scripts\Activate.ps1 on Windows
-```
+* Data preparation
+* Heatmap generation
+* Data cleaning
+* LED aging simulation
+* Model training
+* Time-series experiments
 
-## Install requirements
-```bash
-$ pip install -r requirements.txt
-```
+This README only provides a brief overview of the required preparation. For detailed instructions, please refer to the [original repository](https://github.com/JaspervArkel/VLP_Under_Degradation).
 
-## Install RANSAC Line
-In order to do line fitting, we use a custom line-fitting library so we have the same line fit in the simulator as in the embedded version. This line fitting can be found [here](https://github.com/einstein8612/ransac-line).
+---
 
-In order to install this, please follow the guide there or just copy paste these commands if you do not care about how it gets installed.
+## Preparation
+
+### 1. Clone this repository
 
 ```bash
-$ mkdir third_party
-$ cd third_party
-$ git clone git@github.com:einstein8612/ransac-line.git
-$ cd ransac-line/bindings/python/ransac_line
-$ pip install cffi setuptools
-$ python build_ffi.py
-$ cd ..
-$ pip install .
-$ cd ../../../..
+git clone <URL-OF-THIS-REPOSITORY>
+cd <REPOSITORY-NAME>
 ```
 
-## Data
+### 2. Create a virtual environment
 
-To get started aqcuire the `mat_files` folder and store them in the dataset folder. Afterwards, run the script to translate them into a PyTorch set
+Python 3.13 was used for the original implementation.
 
 ```bash
-$ python dataset/convert.py --src "./dataset/mat_files" --dst "./dataset/exported" --normalise true --training_fraction 0.8 --seed 42
+python -m venv .venv
 ```
 
-This will generate the files
+Activate the virtual environment.
 
-- `{dst}/data_{z}/train.csv`
-- `{dst}/data_{z}/test.csv`
-- `{dst}/data.csv`
-
-In the given destination folder, where the first two are a split of the data grouped by z-pos, and the last is all the data in one CSV.
-
-## Generate heat maps
-
-In order to understand the quality of your cleaning solution or data augmentation solution, you can generate a heatmaps for every LED. Here every heatmap corresponds to the mean of all the values that are associated with that specific (x,y) coordinate.
-
-This is also a necessary step if you want to clean or augment the data.
+On Linux or macOS:
 
 ```bash
-$ python dataset/heatmap.py --src "./dataset/exported/data.csv" --dst "./dataset/heatmaps" --imgs true
+source .venv/bin/activate
 ```
 
-An example of such a heatmap is given here, for the non-cleaned data of LED 16 at `z=176`.
+On Windows PowerShell:
 
-![LED 16 Heatmap](./assets/readme/led_16_heatmap.png)
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-## TX Position extraction (Optional)
-
-In order to make better use of cleaning and augmenting down the line, you may choose to estimate your TX locations through your data itself. It does this through a simple circle fitting method called [r3fit](https://github.com/einstein8612/r3fit/). In order to run this method, you can sue the following command:
+### 3. Install the dependencies
 
 ```bash
-$ python find_led_center.py --src "./dataset/heatmaps/heatmap_176/raw.npy" --min_sample 0.395 --max_sample 0.405 --imgs true
+pip install -r requirements.txt
 ```
 
-Here `min_sample` and `max_sample` decide which points are part of the circle to fit, essentially it means the thickness of the points to fit on. This command will output your estimated TX positions at `./leds/led_positions.json`. It will also optionally output images when you specify it. Here is an example:
+### 4. Install the RANSAC line-fitting dependency
 
-![Fitted LED 18](./assets/readme/led_18_circle_fit.png)
-
-You can clearly see the [r3fit](https://github.com/einstein8612/r3fit/) being much more noise resistant than Kasa, hence chosing it.
-
-## Clean data
-
-Afterwards, you can clean the data generated in the heatmaps with any of the following four, at the time of writing, strategies:
-
-- MEAN
-- IDW (Inverse Distance Weighing)
-- LAMBERTIAN
-- LAMBERTIAN-IDW (Inverse Distance Weighing)
-
-It should be clear what they do: they replace invalid or noisy points using different methods. These include the mean of the nearest valid points, the inverse distance weighted sum of the nearest valid points, an estimated RSS based on the Lambertian model of the closest valid point, and an estimated RSS using the Lambertian model for the nearest valid points, weighted by their inverse distance.
-
-In order to run them use the following command:
+The original implementation uses the [ransac-line](https://github.com/einstein8612/ransac-line) library.
 
 ```bash
-$ python dataset/clean.py --src {SRC} --dst {DST} --strategy {STRATEGY} --imgs {IMGS}
+mkdir third_party
+cd third_party
+
+git clone https://github.com/einstein8612/ransac-line.git
+cd ransac-line/bindings/python/ransac_line
+
+pip install cffi setuptools
+python build_ffi.py
+
+cd ..
+pip install .
+
+cd ../../../..
 ```
 
-### Example (Lambertian IDW)
+### 5. Prepare the dataset
+
+Place the original MATLAB files in:
+
+```text
+dataset/mat_files/
+```
+
+Convert the MATLAB files to the dataset format used by the experiments:
 
 ```bash
-$ python dataset/clean.py --src "dataset/heatmaps/heatmap_176/raw.npy" --dst "dataset/heatmaps/heatmap_176" --strategy LAMBERTIAN-IDW --imgs true
+python dataset/convert.py \
+  --src "./dataset/mat_files" \
+  --dst "./dataset/exported" \
+  --normalise true \
+  --training_fraction 0.8 \
+  --seed 42
 ```
 
-Afterwards, your heatmaps will have been cleaned and images are stored in the destination folder under the name `led_{i}_cleaned_{STRATEGY}.png`
-
-Again, an example of such a heatmap is given here for LED 16.
-
-![LED 16 Cleaned Heatmap](./assets/readme/led_16_cleaned_heatmap.png)
-
-**Note**: In the actual output images, the raw version will not be plotted. This is simply to showcase the cleaning process, the actual output will be just the right sub-figure.
-
-## Age data
-
-In order to evaluate how well the model will perform after data ages and LEDs get replaced etc, we need a way to simulate aged data.
-
-In this repository we provide this with the following command:
-```bash
-$ python dataset/led_age_simulation.py --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" --dst dataset/heatmaps/heatmap_176_aged --min_age 0 --max_age 100000 --r90_hours 33000 --imgs true
-```
-
-This constructs an aged heatmap, but uses random ages as specified by the range and the seed. In order to have fine-tuned control, you may overwrite these ages by using the ``--ages`` argument. The following is an example:
-```bash
-python dataset/led_age_simulation.py --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" --dst dataset/heatmaps/heatmap_176_aged --ages 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 --r90_hours 33000 --imgs true
-```
-
-You can also generate a time-series of data points, which can simulate the model receiving data as the LEDs are aging. This allows for a more finetuned response to the LED degradation problem. You can use the following command to generate this dataset:
+### 6. Generate the heatmaps
 
 ```bash
-$ python dataset/led_age_series.py --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" --dst dataset/exported/age-series --timestep 100 --time 50000
+python dataset/heatmap.py \
+  --src "./dataset/exported/data.csv" \
+  --dst "./dataset/heatmaps" \
+  --imgs true
 ```
 
-## Heatmaps to datasets
+## Training a Model
 
-In order to use cleaned and/or augmented heatmaps in an experiment you need to turn it into a dataset. You can do this by running the following command:
-```bash
-$ python dataset/heatmap_to_dataset.py --src "dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" --dst "dataset/exported/data_176_cleaned" --seed 42
+Model training is performed using `experiment.py`.
+
+Before starting, make sure that the selected dataset directory contains:
+
+```text
+<dataset>/
+├── train.csv
+└── test.csv
 ```
 
-## Downsample/augment data
-
-In order to run on limited hardware, and to test having a lower amount of samples, we can downsample our original data and then augment it using the Lambertian model.
-
-We do this using the following commands to first downsample the data:
-
-```bash
-$ python dataset/downsample.py \
-    --src "dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
-    --dst "dataset/heatmaps/heatmap_176_downsampled_4" \
-    --factor 4 \
-    --cross_x_start 121 \
-    --cross_x_end 161 \
-    --cross_y_start 121 \
-    --cross_y_end 155
-```
-
-and then augment it back to 1cm:
+Use the following general command:
 
 ```bash
-$ python dataset/augment.py \
-    --src "dataset/heatmaps/heatmap_176_downsampled_4" \
-    --dst "dataset/heatmaps/heatmap_176_augmented_4_downsampled_4/augmented.npy" \
-    --factor 4 \
-    --cross_x_start 121 \
-    --cross_x_end 161 \
-    --cross_y_start 121 \
-    --cross_y_end 155 \
-    --final_size_x 282 \
-    --final_size_y 276
+python experiment.py \
+  --task <TASK> \
+  --dataset <DATASET_DIRECTORY> \
+  --seed 42
 ```
 
-_Note that the current setup only allows for you to augment back to 1-cm precision, as this is how the rest of the codebase is structured. This means you must run the same factor in the downsample and upsample/augment command. The cross is also not necessary, but added for completeness in a comparison between clean and augmented data._
+The `--dataset` argument must point to the directory containing `train.csv` and `test.csv`.
 
-## Run experiment (Training)
+### Example: Random Forest
 
-In order to test this data's efficiency at generating positions, we can run experiments with the following command:
+The following command trains the small Random Forest configuration used in the original repository:
 
 ```bash
-$ python experiment.py --task {TASK} --dataset {DATASET} --seed {SEED}
+python experiment.py \
+  --task "RF-TINY" \
+  --dataset "./dataset/exported/data_176" \
+  --seed 42
 ```
 
-### Example (RF)
+After training, the model is saved automatically in:
+
+```text
+saved_runs/
+```
+
+For example:
+
+```text
+saved_runs/RF-TINY-1745593383.pickle
+```
+
+
+
+### Available model tasks
+
+The model configurations are registered in `models/__init__.py`. Available task names include:
+
+```text
+RF
+RF-TINY
+MLP
+MLP-TINY
+MLP-TINY-NORMALISE
+MLP-ONLINE-TINY
+MLP-ONLINE-PICO
+KNN
+WKNN
+WOKNN
+WOKNN-ONLINE
+RESIDUAL-MLP-ONLINE
+RESIDUAL-MLP-ONLINE-SPARSE
+MLP-ANTI-DEGRADING
+RF-ANTI-DEGRADING
+MLP-ANTI-DEGRADING-PICO
+RF-ANTI-DEGRADING-PICO
+PICO-INTERFACE
+```
+
+Additional preparation steps, including heatmap cleaning, LED position estimation, LED degradation simulation, downsampling, augmentation and model training, are described in the [original VLP Under Degradation repository](https://github.com/JaspervArkel/VLP_Under_Degradation).
+
+---
+
+## Run the Degradation Time-Series Experiment
+
+The extended degradation experiment is implemented in:
+
+```text
+Experiment_timeseries_degradation.py
+```
+
+This experiment evaluates a trained positioning model while simulating several degradation effects over time, including:
+
+* LED ageing
+* Dirt accumulation
+* Dirt cleaning
+* Thermal droop
+* Broken LEDs
+* Temporary blockages
+* Partial blockages
+* Measurement flickering
+
+Before running the experiment, make sure that you have:
+
+* A trained model in `saved_runs/`
+* A cleaned heatmap stored as a `.npy` file
+* Installed the required Python dependencies
+
+### Basic command
 
 ```bash
-$ python experiment.py --task "RF-TINY" --dataset "./dataset/exported/data_176" --seed 42
-# ...
-# Model saved to saved_runs/RF-TINY-1745593383.pickle
-# Average error: 24.283416141929006
+python Experiment_timeseries_degradation.py \
+  --task "<TASK>" \
+  --load_model "./saved_runs/<MODEL_FILE>" \
+  --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
+  --timestep 1000 \
+  --time 100000 \
+  --seed 42
 ```
 
-## (Re?)Run experiment (From trained model)
-
-In order to be repeatable, we can used the saved run to predict the average error again.
+For example:
 
 ```bash
-$ python experiment.py --task {TASK} --dataset {DATASET} --load {SAVED_RUN} --seed {SEED}
+python Experiment_timeseries_degradation.py \
+  --task "MLP-TINY" \
+  --load_model "./saved_runs/MLP-TINY-<TIMESTAMP>.pth" \
+  --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
+  --timestep 1000 \
+  --time 100000 \
+  --seed 42
 ```
 
-### Example (RF)
+The value supplied to `--task` must match the type of the loaded model.
+
+### Main parameters
+
+| Parameter                | Description                                    |  Default |
+| ------------------------ | ---------------------------------------------- | -------: |
+| `--task`                 | Registered model configuration                 | Required |
+| `--load_model`           | Path to the trained model                      | Required |
+| `--src`                  | Path to the cleaned heatmap `.npy` file        | Required |
+| `--timestep`             | Number of simulated hours between evaluations  | Required |
+| `--time`                 | Total simulated time in hours                  |  `50000` |
+| `--samples_per_timestep` | Number of generated samples at each timestep   |    `100` |
+| `--std`                  | Standard deviation of degradation noise        |  `0.005` |
+| `--flickering_prob`      | Probability of measurement flickering          |  `0.001` |
+| `--device`               | Device used for model execution                |    `cpu` |
+| `--seed`                 | Random seed                                    |     `42` |
+| `--broken_LED_amount`    | Number of LEDs that fail during the experiment |      `1` |
+| `--blockage_amount`      | Number of simulated temporary blockages        |      `1` |
+
+### Select degradation effects
+
+All degradation effects are enabled by default. Individual effects can be disabled using their corresponding `--no-...` argument.
+
+For example, run the experiment without thermal droop and without broken LEDs:
 
 ```bash
-$ python experiment.py --task "RF-TINY" --dataset "./dataset/exported/data_176" --load "./saved_runs/RF-TINY-1745593383.pickle" --seed 42
-# ...
-# Average error: 24.283416141929006
+python Experiment_timeseries_degradation.py \
+  --task "MLP-TINY" \
+  --load_model "./saved_runs/MLP-TINY-<TIMESTAMP>.pth" \
+  --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
+  --timestep 1000 \
+  --time 100000 \
+  --no-simulate_thermal_droop \
+  --no-simulate_broken_led \
+  --seed 42
 ```
 
-## CUDA/ROCm
+The available degradation options are:
 
-If you want to use your GPU to accelerate training, then pass the device parameter as follows:
+| Enabled argument                  | Disabled argument                    | Simulated effect                  |
+| --------------------------------- | ------------------------------------ | --------------------------------- |
+| `--simulateAging`                 | `--no-simulateAging`                 | Gradual LED ageing                |
+| `--simulate_LED_Dirt`             | `--no-simulate_LED_Dirt`             | Dirt accumulation on LEDs         |
+| `--simulate_dirt_cleaning`        | `--no-simulate_dirt_cleaning`        | Periodic dirt cleaning            |
+| `--simulate_thermal_droop`        | `--no-simulate_thermal_droop`        | Temperature-related thermal droop |
+| `--simulate_broken_led`           | `--no-simulate_broken_led`           | Complete LED failure              |
+| `--simulate_parttime_blockage`    | `--no-simulate_parttime_blockage`    | Temporary LED blockage            |
+| `--simulate_partitional_blockage` | `--no-simulate_partitional_blockage` | Partial LED blockage              |
+
+### Example with multiple broken LEDs
 
 ```bash
-$ python experiment.py --task {TASK} --dataset {DATASET} --device {DEVICE} --seed {SEED}
+python Experiment_timeseries_degradation.py \
+  --task "MLP-TINY" \
+  --load_model "./saved_runs/MLP-TINY-<TIMESTAMP>.pth" \
+  --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
+  --timestep 1000 \
+  --time 100000 \
+  --broken_LED_amount 3 \
+  --blockage_amount 2 \
+  --seed 42
 ```
 
-### Example (MLP)
+### GPU execution
+
+A PyTorch model can be evaluated on a CUDA-compatible GPU using:
 
 ```bash
-$ python experiment.py --task "MLP" --dataset "./dataset/exported/data_176" --device "cuda:0" --seed 42
-# ...
-# Average error: 6.804797172546387
+python Experiment_timeseries_degradation.py \
+  --task "MLP-TINY" \
+  --load_model "./saved_runs/MLP-TINY-<TIMESTAMP>.pth" \
+  --src "./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy" \
+  --timestep 1000 \
+  --time 100000 \
+  --device "cuda:0" \
+  --seed 42
 ```
 
-## Run timeseries experiment
+### Output
 
-In order to test our solution over a period of time where LEDs may dim, we can use the simulator provided in `experiment_timeseries.py`. A minimal example is found below. Please consult the source code if you need to tweak further.
+When saving is enabled, the results are stored automatically in:
+
+```text
+saved_timeseries_runs_degradated/<TASK>-<TIMESTAMP>/
+```
+
+Each run contains:
+
+```text
+saved_timeseries_runs_degradated/
+└── <TASK>-<TIMESTAMP>/
+    ├── graph.png
+    └── results.json
+```
+
+The generated graph shows:
+
+1. Positioning error over time
+2. Cumulative positioning error over time
+3. Average LED decay, including minimum and maximum decay values
+
+The `results.json` file contains the experiment configuration, timesteps, positioning errors and simulated decay values.
+
+# Embedded part
+# Raspberry Pi Pico Deployment
+
+This project deploys the VLP positioning model to a Raspberry Pi Pico using TensorFlow Lite Micro.
+
+## Requirements
+
+Install:
+
+* Python 3
+* CMake
+* Ninja
+* Raspberry Pi Pico SDK
+* ARM GNU toolchain
+* `pico-tflmicro`
+* Raspberry Pi Pico or Pico VS Code extension
+
+Clone `pico-tflmicro`:
 
 ```bash
-$ python experiment_timeseries.py --task "MLP-TINY" --load_model "./saved_runs/MLP-TINY-1748798043.pth" --src ./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy --timestep 1000 --time 100000 --seed 42
+git clone https://github.com/raspberrypi/pico-tflmicro.git
 ```
 
-This will generate a saved run at `./saved_timeseries_runs/MLP-TINY-{TIMESTAMP}`, where you can find the following files. The `results.json` will contain all reproducability parameters, as well as the errors and decays in arrays. This is useful for making figures afterwards manually. It will also give you a figure where you can see the (cumulative) error positioning error, as well as the minimum, average and maximum decay scalar at every timestep. An example can be seen below:
-
-![Example timeseries graph](./assets/readme/timeseries_example.png)
-
-### Comparison
-
-If you want to compare to other solutions, you can make use of the built in compare mode. This allows for n other runs to be displayed in our error graph. The following command demonstrates using it:
+## 1. Clone the Project
 
 ```bash
-$ python experiment_timeseries.py --task "MLP-ONLINE-TINY" --load_model "./saved_runs/MLP-ONLINE-TINY-1748798403.pth" --src ./dataset/heatmaps/heatmap_176/cleaned_LAMBERTIAN-IDW.npy --timestep 1000 --time 100000 --seed 42 --compare-to "./saved_timeseries_runs/MLP-TINY-1748798275" "./saved_timeseries_runs/MLP-TINY-NORMALISE-1748798493"
+git clone https://github.com/JaspervArkel/VLP_Under_Degradation.git
+cd VLP_Under_Degradation
 ```
 
-![Example comparison timeseries graph](./assets/readme/timeseries_comparison_example.png)
+## 2. Install Python Dependencies
 
-## Connected repositories
-- [r3fit](https://github.com/einstein8612/r3fit): Circle fitting library for estimating TX positions
-- [ransac-line](https://github.com/einstein8612/ransac-line): 2D-Line fitting library for degradation estimation
-- [VLP-pico](https://github.com/einstein8612/VLP-pico): Implementation for the online pico model as found in this repository. Written for the RP2040 and RP2350 microcontrollers.
+```bash
+python -m venv .venv
+```
+
+Windows:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux or macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+pip install -r requirements.txt
+pip install tensorflow pyserial
+```
+
+## 3. Export the Dataset
+
+The following files must exist:
+
+```text
+dataset/exported/data_176/train.csv
+dataset/exported/data_176/test.csv
+```
+
+Export them to NumPy arrays:
+
+```bash
+python utils/export_trainin_data.py --dataset "./dataset/exported/data_176"
+```
+
+This creates:
+
+```text
+X_train.npy
+y_train.npy
+X_test.npy
+y_test.npy
+```
+
+## 4. Train and Quantize the Model
+
+Run:
+
+```bash
+python tflite_Deployment.py
+```
+
+This creates:
+
+```text
+x_mean.npy
+x_std.npy
+tiny_pico_model.keras
+tiny_pico_model_int8.tflite
+```
+
+Test the TFLite model:
+
+```bash
+python test_tflite.py
+```
+
+## 5. Generate the Pico Files
+
+Generate the model C array:
+
+```bash
+python utils/convert_tflite_to_cc.py
+```
+
+Generate the normalization header:
+
+```bash
+python utils/export_arrays.py
+```
+
+Generate the kNN reference data:
+
+```bash
+python utils/export_knn_references.py
+```
+
+Copy the generated files into `raspberry-project`:
+
+```text
+model_data.cc
+normalization_data.h
+knn_reference_data.h
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item model_data.cc raspberry-project\model_data.cc -Force
+Copy-Item normalization_data.h raspberry-project\normalization_data.h -Force
+Copy-Item knn_reference_data.h raspberry-project\knn_reference_data.h -Force
+```
+
+Linux or macOS:
+
+```bash
+cp model_data.cc raspberry-project/model_data.cc
+cp normalization_data.h raspberry-project/normalization_data.h
+cp knn_reference_data.h raspberry-project/knn_reference_data.h
+```
+
+## 6. Configure `pico-tflmicro`
+
+Open:
+
+```text
+raspberry-project/CMakeLists.txt
+```
+
+Replace the existing absolute `pico-tflmicro` path with the path to your local clone.
+
+For example:
+
+```cmake
+set(
+    PICO_TFLMICRO_PATH
+    "C:/path/to/pico-tflmicro"
+)
+
+add_subdirectory(
+    "${PICO_TFLMICRO_PATH}"
+    "pico-tflmicro-build"
+    EXCLUDE_FROM_ALL
+)
+
+target_include_directories(
+    pico_mlp_inference
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    "${PICO_TFLMICRO_PATH}/src"
+)
+```
+
+The original Raspberry Pi Pico should use:
+
+```cmake
+set(PICO_BOARD pico CACHE STRING "Board type")
+```
+
+## 7. Build the Firmware
+
+From the repository root:
+
+```bash
+cmake -S raspberry-project -B raspberry-project/build -G Ninja
+cmake --build raspberry-project/build --target pico_mlp_inference
+```
+
+The firmware is created at:
+
+```text
+raspberry-project/build/pico_mlp_inference.uf2
+```
+
+## 8. Flash the Pico
+
+1. Disconnect the Pico.
+2. Hold the `BOOTSEL` button.
+3. Connect the Pico over USB.
+4. Release `BOOTSEL`.
+5. Open the `RPI-RP2` drive.
+6. Copy `pico_mlp_inference.uf2` to the drive.
+
+The Pico will restart automatically.
+
+## 9. Configure the Serial Port
+
+Find the Pico serial port.
+
+On Windows:
+
+```powershell
+[System.IO.Ports.SerialPort]::getportnames()
+```
+
+Open `picotester.py` and change:
+
+```python
+PORT = "COM11"
+```
+
+to the port used by your Pico.
+
+## 10. Run the Experiment
+
+Run:
+
+```bash
+python picotester.py
+```
+
+The host sends degraded measurements to the Pico. The Pico runs the quantized model and returns the predicted position.
+
+Results are saved in:
+
+```text
+pico_degradation_results/
+```
+
+
+## Original implementation
+
+This study builds upon the implementation provided in:
+
+* [joeywli\VLP](https://github.com/joeywli/VLP.git)
+
+Please refer to the original repository for the complete preparation pipeline, original experiments and detailed documentation.
+
+## Citation
+
+When using or extending  this implementation, please cite or reference:
+
+```text
+VLP Under Degradation
+https://github.com/JaspervArkel/VLP_Under_Degradation
+```
+
+Add the formal citation for the associated paper or thesis here when applicable:
+
+```bibtex
+@misc{vlp_under_degradation,
+  author       = {<Jasper van Arkel>},
+  title        = {VLP Under Degradation},
+  year         = {<2026>},
+  howpublished = {\url{https://github.com/JaspervArkel/VLP_Under_Degradation}}
+}
+```
+
+## License
+
+<Add the license used for this repository.>
+
+Parts of this project may be based on code from the original VLP Under Degradation repository. Verify the license of the original repository and preserve all required copyright and license notices.
