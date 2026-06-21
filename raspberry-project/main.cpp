@@ -92,8 +92,7 @@ void repair_blockage_and_broken(float X[36], float rough_x, float rough_y) {
         }
     }
 
-    printf("REPAIRED,%d\n", replaced);
-    fflush(stdout);
+
 }
 
 void run_model(
@@ -317,6 +316,7 @@ int main() {
             fflush(stdout);
             continue;
         }
+        uint64_t calculation_start_us = time_us_64();
 
         float temperature = current_temperature;
         float age_hours = current_age_hours;
@@ -360,8 +360,6 @@ int main() {
             &rough_y
         );
 
-        printf("ROUGH,%f,%f\n", rough_x, rough_y);
-        fflush(stdout);
 
         /*
          * Step 3: Repair blocked/broken LED values in raw sensor space.
@@ -398,6 +396,15 @@ int main() {
             &pred_y
         );
 
+        uint64_t calculation_end_us = time_us_64();
+        uint64_t calculation_time_us =
+            calculation_end_us - calculation_start_us;
+
+        printf(
+            "CALC_US,%llu\n",
+            (unsigned long long)calculation_time_us
+        );
+        fflush(stdout);
         printf("PRED,%f,%f\n", pred_x, pred_y);
         fflush(stdout);
 

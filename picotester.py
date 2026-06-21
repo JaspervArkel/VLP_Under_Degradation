@@ -3,8 +3,8 @@ import time
 from pathlib import Path
 
 import numpy as np
-import serial
 import matplotlib.pyplot as plt
+import serial
 
 SIMULATE_BROKEN_LED = True
 BROKEN_LED_AMOUNT = 1
@@ -19,7 +19,7 @@ BAUD = 115200
 DATA_NPY = "/dataset/exported/data_176.npy"  # shape [H, W, 36]
 TIME_HOURS = 100000
 TIMESTEP = 1000
-SAMPLES_PER_TIMESTEP = 20
+SAMPLES_PER_TIMESTEP = 100
 SEED = 42
 
 STD = 0.005
@@ -28,6 +28,14 @@ FLICKERING_PROB = 0.001
 ALPHA = 0.03
 THERMAL_COEFF = 0.003
 
+plt.rcParams.update({
+    "font.size": 18,
+    "axes.titlesize": 18,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 16,
+    "legend.fontsize": 18,
+})
 
 def valid_mask_from_data(data):
     valid = np.ones_like(data[:, :, 0], dtype=bool)
@@ -38,7 +46,7 @@ def valid_mask_from_data(data):
 def generate_relative_decay(timesteps, leds_n, rng):
     timestep= 1000
     hours_per_year = 365 * 24
-    thermal_coeff = rng.uniform(0.002,1)
+    thermal_coeff = rng.uniform(0.002,0.01)
     alpha = rng.uniform(0.01, 0.05)
     relative_decay = np.ones((len(timesteps), leds_n))
     dirt_Decay = np.ones(len(timesteps))
@@ -179,6 +187,7 @@ def wait_for_ready(ser):
 
 
 def wait_for_prediction(ser):
+    calculation_us = None
     while True:
         line = ser.readline().decode(errors="replace").strip()
         if line:
@@ -186,22 +195,26 @@ def wait_for_prediction(ser):
 
         if line.startswith("PRED,"):
             _, px, py = line.split(",")
-            return np.array([float(px), float(py)], dtype=np.float32)
+            return np.array([float(px), float(py)], dtype=np.float32) , calculation_us
 
         if line.startswith("Prediction:"):
             # handles your older print format:
             # Prediction: x=2105.589355, y=986.995056
             clean = line.replace("Prediction:", "").replace("x=", "").replace("y=", "")
             parts = clean.replace(",", " ").split()
-            return np.array([float(parts[0]), float(parts[1])], dtype=np.float32)
+            return np.array([float(parts[0]), float(parts[1])], dtype=np.float32) , calculation_us
 
         if line.startswith("ERROR"):
             raise RuntimeError(line)
 
+        if line.startswith("CALC_US,"):
+            _, value = line.split(",", 1)
+            calculation_us = float(value)
+
 
 def main():
     rng = np.random.default_rng(SEED)
-
+    calculation_times_us = []
     X_base = np.load("X_test.npy").astype(np.float32)
     y_base = np.load("y_test.npy").astype(np.float32)
 
@@ -255,10 +268,12 @@ def main():
                     x=X_degraded[i],
                 )
 
-                pred = wait_for_prediction(ser)
+                pred, runtime = wait_for_prediction(ser)
                 err = np.linalg.norm(pred - y_true[i])
 
                 timestep_errors.append(float(err))
+
+                calculation_times_us.append(runtime)
 
                 print(
                     f"t={t} sample={i} "
@@ -313,6 +328,14 @@ def main():
     plt.savefig(out_dir / "degradation_scalars.png", dpi=150)
     plt.close()
     print("Saved results to", out_dir)
+
+    times = np.asarray(calculation_times_us)
+
+    print(f"Average calculation time: {times.mean():.2f} us")
+    print(f"Median calculation time:  {np.median(times):.2f} us")
+    print(f"Minimum calculation time: {times.min():.2f} us")
+    print(f"Maximum calculation time: {times.max():.2f} us")
+    print(f"95th percentile:          {np.percentile(times, 95):.2f} us")
 
 
 if __name__ == "__main__":

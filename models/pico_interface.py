@@ -5,7 +5,7 @@ from torch import nn
 from dataset import FPDataset
 from models.base import BaseModel
 
-from serial import Serial
+import serial
 
 def init_weights(m):
     if isinstance(m, nn.Linear):

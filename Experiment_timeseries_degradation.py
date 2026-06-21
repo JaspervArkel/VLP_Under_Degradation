@@ -18,6 +18,15 @@ from models.rf_anti_degradation import RFAntiDegradation
 R90_MIN = 10000
 R90_MAX = 50000
 
+plt.rcParams.update({
+    "font.size": 18,
+    "axes.titlesize": 18,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 16,
+    "legend.fontsize": 18,
+})
+
 
 def generate_test_set(data: npt.NDArray, valid_mask: npt.NDArray, test_set_fraction: float, rng: np.random.Generator) -> \
 tuple[npt.NDArray, npt.NDArray]:
@@ -314,10 +323,14 @@ def main(args):
     os.makedirs(f"./saved_timeseries_runs_degradated/{task}-{now}", exist_ok=True)
 
     # Save the results
-    _, axs = plt.subplots(3, figsize=(10, 15))
+    fig, axs = plt.subplots(
+        3, 1,
+        figsize=(11, 15),
+        layout="constrained"
+    )
 
     # Plot the errors and cumulative errors
-    axs[0].plot(timesteps, errors, label=f"{type(model).__name__} (Current Run)")
+    axs[0].plot(timesteps, errors, label=f"{type(model).__name__}")
     axs[0].set(xlabel='Time in hours passed', ylabel='Positioning Error (mm)')
     axs[0].set(title='Positioning Error vs. LED Degradation')
 
@@ -333,8 +346,8 @@ def main(args):
             if len(run_errors) != len(errors):
                 print(f"Skipping {run} due to mismatched length of errors")
                 continue
-            axs[0].plot(timesteps, run_errors, label=f"{run_results["model"]} (Run {os.path.basename(run)})")
-            axs[1].plot(timesteps, np.cumsum(run_errors), label=f"{run_results["model"]} (Run {os.path.basename(run)})")
+            axs[0].plot(timesteps, run_errors, label=f"{run_results["model"]}")
+            axs[1].plot(timesteps, np.cumsum(run_errors), label=f"{run_results["model"]}")
 
     axs[0].legend()
     axs[1].legend()

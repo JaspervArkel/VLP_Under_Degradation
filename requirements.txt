@@ -1,3 +1,4 @@
+pyserial
 scipy
 torch
 numpy

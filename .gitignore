@@ -187,3 +187,19 @@ leds
 third_party
 
 generated_figures
+
+.json
+
+.zip
+
+saved_timeseries_runs_degradated
+
+pico_degradation_results
+
+mat_files.zip
+
+.keras
+
+.tflite
+
+.npy
